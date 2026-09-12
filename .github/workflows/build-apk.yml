@@ -41,14 +41,13 @@ jobs:
         run: |
           pip install --user buildozer cython==0.29.36
 
-      - name: Cache Buildozer toolchain
+      - name: Cache Buildozer toolchain (exact match only)
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             .buildozer
           key: buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-
 
       - name: Prepare Android SDK cmdline-tools
         run: |
@@ -154,6 +153,7 @@ jobs:
           export PATH=$PATH:~/.local/bin
           export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
           export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+          rm -rf bin
           buildozer android debug 2>&1 | tee build.log
 
       - name: Diagnose on failure
@@ -170,6 +170,9 @@ jobs:
           python3 << 'EOF'
           import glob, struct, sys
           files = glob.glob('.buildozer/android/platform/build-arm64-v8a/dists/**/libs/arm64-v8a/*.so', recursive=True)
+          if not files:
+              print('::error:: No native libs found - build did not actually happen!')
+              sys.exit(1)
           bad = []
           for f in files:
               with open(f, 'rb') as fh:
@@ -205,3 +208,4 @@ jobs:
         with:
           name: aqsati-apk
           path: bin/*.apk
+          if-no-files-found: error
