@@ -70,6 +70,16 @@ jobs:
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
 
+      - name: Pre-seed recipe packages (bypass blocked downloads)
+        run: |
+          if [ -f recipe-packages.zip ]; then
+            unzip -o recipe-packages.zip -d .buildozer/android/platform/build-arm64-v8a/
+            echo "=== pre-seeded packages ==="
+            find .buildozer/android/platform/build-arm64-v8a/packages -name "*.zip" | sort
+          else
+            echo "recipe-packages.zip not found - downloads will run normally"
+          fi
+
       - name: Pre-download freetype (savannah server is flaky)
         run: |
           PKG_DIR=.buildozer/android/platform/build-arm64-v8a/packages/freetype
@@ -126,6 +136,7 @@ jobs:
         run: |
           export PATH=$PATH:~/.local/bin
           export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
+          export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
           buildozer android debug
 
       - name: Verify 16 KB alignment
