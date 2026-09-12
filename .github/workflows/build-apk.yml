@@ -78,14 +78,15 @@ jobs:
 
       - name: Pre-seed recipe packages (bypass blocked downloads)
         run: |
+          mkdir -p .buildozer/android/platform/build-arm64-v8a
           if [ -f recipe-packages.zip ]; then
-            mkdir -p .buildozer/android/platform/build-arm64-v8a
             unzip -o recipe-packages.zip -d .buildozer/android/platform/build-arm64-v8a/
-            echo "=== pre-seeded packages ==="
-            find .buildozer/android/platform/build-arm64-v8a/packages -type f | sort
-          else
-            echo "WARNING: recipe-packages.zip NOT found in repo root"
           fi
+          if [ -f recipe-reportlab.zip ]; then
+            unzip -o recipe-reportlab.zip -d .buildozer/android/platform/build-arm64-v8a/
+          fi
+          echo "=== pre-seeded packages ==="
+          find .buildozer/android/platform/build-arm64-v8a/packages -type f | sort
 
       - name: Pre-download freetype (savannah server is flaky)
         run: |
