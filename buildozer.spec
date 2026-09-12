@@ -1,7 +1,7 @@
 [app]
 
 # (str) Title of your application
-title = أقساطي
+title = Aqsati
 
 # (str) Package name
 package.name = aqsati
