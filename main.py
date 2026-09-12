@@ -47,14 +47,14 @@ try:
 except ImportError:
     REPORTLAB_AVAILABLE = False
 
-# دعم pandas و openpyxl لتصدير إكسل احترافي وملون بالذكاء والتصميم المتقدم
+# دعم openpyxl (خفيف و pure-python - يعمل على أندرويد بدون مشاكل)
+# ملاحظة: أزلنا pandas لأنها ثقيلة ولا تدعم أندرويد، وأبقينا التصميم نفسه
 try:
-    import pandas as pd
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    PANDAS_EXCEL_AVAILABLE = True
+    OPENPYXL_AVAILABLE = True
 except ImportError:
-    PANDAS_EXCEL_AVAILABLE = False
+    OPENPYXL_AVAILABLE = False
 
 # البحث عن خط يدعم اللغة العربية
 font_path = "arial.ttf" if os.path.exists("arial.ttf") else ("C:/Windows/Fonts/arial.ttf" if os.path.exists("C:/Windows/Fonts/arial.ttf") else "")
@@ -2277,7 +2277,7 @@ class AqsatiApp(MDApp):
                     "رقم الجوال": c.get("phone", ""),
                     "رقم الهوية": c.get("id_number", "")
                 }
-                
+
                 schedule = c.get("schedule_installments", [])
                 for item in schedule:
                     m_num = item.get("month_num", 1)
@@ -2290,78 +2290,87 @@ class AqsatiApp(MDApp):
                 rows.append(row_data)
 
             dir_path = self.get_aqsati_internal_dir()
-            file_path = os.path.join(dir_path, f"Aqsati_Report_{self.current_user['username']}.xlsx")
-            
-            if rows:
-                if PANDAS_EXCEL_AVAILABLE:
-                    df = pd.DataFrame(rows)
-                    df.to_excel(file_path, index=False, engine='openpyxl')
-                    
-                    wb = openpyxl.load_workbook(file_path)
-                    ws = wb.active
-                    ws.views.sheetView[0].rightToLeft = True
-                    
-                    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-                    header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
-                    
-                    paid_fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
-                    paid_font = Font(name="Arial", size=10, color="065F46", bold=True)
-                    
-                    unpaid_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
-                    unpaid_font = Font(name="Arial", size=10, color="991B1B", bold=True)
-                    
-                    general_font = Font(name="Arial", size=10, color="334155")
-                    align_center = Alignment(horizontal="center", vertical="center")
-                    
-                    thin_border = Border(
-                        left=Side(style='thin', color='CBD5E1'),
-                        right=Side(style='thin', color='CBD5E1'),
-                        top=Side(style='thin', color='CBD5E1'),
-                        bottom=Side(style='thin', color='CBD5E1')
-                    )
 
+            if rows and OPENPYXL_AVAILABLE:
+                file_path = os.path.join(dir_path, f"Aqsati_Report_{self.current_user['username']}.xlsx")
+
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "تقرير الأقساط"
+                ws.views.sheetView[0].rightToLeft = True
+
+                headers = list(rows[0].keys())
+                ws.append(headers)
+                for r in rows:
+                    ws.append([r.get(h, "") for h in headers])
+
+                header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+                header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+
+                paid_fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+                paid_font = Font(name="Arial", size=10, color="065F46", bold=True)
+
+                unpaid_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+                unpaid_font = Font(name="Arial", size=10, color="991B1B", bold=True)
+
+                general_font = Font(name="Arial", size=10, color="334155")
+                align_center = Alignment(horizontal="center", vertical="center")
+
+                thin_border = Border(
+                    left=Side(style='thin', color='CBD5E1'),
+                    right=Side(style='thin', color='CBD5E1'),
+                    top=Side(style='thin', color='CBD5E1'),
+                    bottom=Side(style='thin', color='CBD5E1')
+                )
+
+                for col_num in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=1, column=col_num)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = align_center
+                    cell.border = thin_border
+
+                ws.row_dimensions[1].height = 28
+
+                for row_num in range(2, ws.max_row + 1):
+                    ws.row_dimensions[row_num].height = 22
                     for col_num in range(1, ws.max_column + 1):
-                        cell = ws.cell(row=1, column=col_num)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = align_center
+                        cell = ws.cell(row=row_num, column=col_num)
                         cell.border = thin_border
-                    
-                    ws.row_dimensions[1].height = 28
+                        cell.alignment = align_center
 
-                    for row_num in range(2, ws.max_row + 1):
-                        ws.row_dimensions[row_num].height = 22
-                        for col_num in range(1, ws.max_column + 1):
-                            cell = ws.cell(row=row_num, column=col_num)
-                            cell.border = thin_border
-                            cell.alignment = align_center
-                            
-                            cell_val = str(cell.value or "")
-                            if "✓ مسدد" in cell_val:
-                                cell.fill = paid_fill
-                                cell.font = paid_font
-                            elif "✗ غير مسدد" in cell_val:
-                                cell.fill = unpaid_fill
-                                cell.font = unpaid_font
-                            else:
-                                cell.font = general_font
+                        cell_val = str(cell.value or "")
+                        if "✓ مسدد" in cell_val:
+                            cell.fill = paid_fill
+                            cell.font = paid_font
+                        elif "✗ غير مسدد" in cell_val:
+                            cell.fill = unpaid_fill
+                            cell.font = unpaid_font
+                        else:
+                            cell.font = general_font
 
-                    for col in ws.columns:
-                        max_len = max(len(str(cell.value or '')) for cell in col)
-                        col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                        ws.column_dimensions[col_letter].width = max(max_len + 5, 14)
+                for col in ws.columns:
+                    max_len = max(len(str(cell.value or '')) for cell in col)
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    ws.column_dimensions[col_letter].width = max(max_len + 5, 14)
 
-                    wb.save(file_path)
-                else:
-                    file_path = os.path.join(dir_path, f"Aqsati_Report_{self.current_user['username']}.csv")
-                    with open(file_path, mode='w', newline='', encoding='utf-8-sig') as file:
-                        writer = csv.DictWriter(file, fieldnames=rows[0].keys())
-                        writer.writeheader()
-                        for r in rows:
-                            writer.writerow(r)
+                wb.save(file_path)
+            elif rows:
+                file_path = os.path.join(dir_path, f"Aqsati_Report_{self.current_user['username']}.csv")
+                with open(file_path, mode='w', newline='', encoding='utf-8-sig') as file:
+                    writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+                    writer.writeheader()
+                    for r in rows:
+                        writer.writerow(r)
+            else:
+                self.show_action_message("لا يوجد عملاء لتصديرهم")
+                return
 
-            abs_path = os.path.abspath(file_path)
-            webbrowser.open(os.path.dirname(abs_path))
+            try:
+                webbrowser.open(os.path.dirname(os.path.abspath(file_path)))
+            except Exception:
+                pass
+
             self.show_action_message(f"تم تصدير وتجهيز ملف الإكسل الاحترافي داخل مجلد (أقساطي):\n{file_path}")
         except Exception as e:
             self.show_action_message(f"حدث خطأ أثناء تصدير الإكسل الاحترافي: {str(e)}")
