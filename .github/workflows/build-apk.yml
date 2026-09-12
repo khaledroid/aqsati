@@ -53,15 +53,19 @@ jobs:
           PKG_DIR=.buildozer/android/platform/build-arm64-v8a/packages/freetype
           mkdir -p $PKG_DIR
           cd $PKG_DIR
+          rm -f freetype-2.14.1.tar.gz .mark-freetype-2.14.1.tar.gz
           for url in \
             "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
             "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
             "https://sourceforge.net/projects/freetype/files/freetype2/2.14.1/freetype-2.14.1.tar.gz/download" ; do
             echo "Trying: $url"
-            curl -fSL --connect-timeout 20 --retry 3 -o freetype-2.14.1.tar.gz "$url" && break
-            sleep 5
+            curl -fSL --connect-timeout 20 --retry 5 --retry-delay 10 -o freetype-2.14.1.tar.gz "$url" && break
+            sleep 10
           done
-          ls -la freetype-2.14.1.tar.gz
+          gzip -t freetype-2.14.1.tar.gz
+          touch .mark-freetype-2.14.1.tar.gz
+          echo "=== freetype package dir ==="
+          ls -la
 
       - name: Build APK
         run: |
