@@ -34,18 +34,12 @@ except ImportError:
     except ImportError:
         MDDatePicker = None
 
-# استيراد مكتبات ReportLab لتوليد ملفات PDF
+# دعم fpdf2 لإنشاء ملفات PDF (خفيف و pure-python - يعمل على أندرويد بدون recipe)
 try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.pdfgen import canvas
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    REPORTLAB_AVAILABLE = True
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
 except ImportError:
-    REPORTLAB_AVAILABLE = False
+    FPDF_AVAILABLE = False
 
 # دعم openpyxl (خفيف و pure-python - يعمل على أندرويد بدون مشاكل)
 # ملاحظة: أزلنا pandas لأنها ثقيلة ولا تدعم أندرويد، وأبقينا التصميم نفسه
@@ -62,7 +56,7 @@ font_path = "arial.ttf" if os.path.exists("arial.ttf") else ("C:/Windows/Fonts/a
 if font_path:
     LabelBase.register(name="Roboto", fn_regular=font_path)
     LabelBase.register(name="Arabic", fn_regular=font_path)
-    if REPORTLAB_AVAILABLE:
+    if FPDF_AVAILABLE:
         try:
             pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
         except Exception:
@@ -1817,7 +1811,6 @@ class AqsatiApp(MDApp):
         range_m_income = sum(c.get('monthly_installment', 0.0) for c in filtered_customers)
         range_tot_income = sum(c.get('monthly_installment', 0.0) * c.get('total_months', 0) for c in filtered_customers)
         range_goods_val = sum(c.get('base_price', 0.0) for c in filtered_customers)
-        
         range_profit_val = 0.0
         for c in filtered_customers:
             base = c.get('base_price', 0.0)
@@ -1827,154 +1820,103 @@ class AqsatiApp(MDApp):
         dir_path = self.get_aqsati_internal_dir()
         pdf_filename = os.path.join(dir_path, f"تقرير_الإيرادات_الفترة_{date_from_str}_إلى_{date_to_str}.pdf".replace(" ", "_"))
 
-        if REPORTLAB_AVAILABLE:
+        if not FPDF_AVAILABLE:
+            self.show_action_message("مكتبة PDF غير متوفرة على هذا الجهاز")
+            return
+
+        try:
+            pdf = FPDF('P', 'mm', 'Letter')
+            pdf.set_margins(10, 10, 10)
+            pdf.set_auto_page_break(True, 15)
+            pdf.add_page()
+            font = 'Arabic' if font_path else 'helvetica'
+            if font_path:
+                pdf.add_font('Arabic', '', font_path)
+
+            W = 195.9
+            # Header banner
+            pdf.set_fill_color(15, 23, 42)
+            pdf.rect(10, 10, W, 22, 'F')
+            pdf.set_xy(10, 12)
+            pdf.set_text_color(203, 213, 225)
+            pdf.set_font(font, size=9)
+            pdf.multi_cell(W, 5, ar("تطبيق أقساطي - الإدارة المالية المؤسسية"), align='C')
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(font, size=15)
+            pdf.multi_cell(W, 7, ar("تقرير إيرادات الفترة المالية والأرباح"), align='C')
+            pdf.set_text_color(203, 213, 225)
+            pdf.set_font(font, size=8)
+            pdf.multi_cell(W, 5, ar(f"فترة التقرير: من {date_from_str} إلى {date_to_str}  |  تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d %H:%M')}"), align='C')
+            # Gold bar
+            pdf.set_fill_color(217, 119, 6)
+            pdf.rect(10, 32, W, 1.2, 'F')
+            pdf.set_y(36)
+
+            # Summary grid: 3 rows x 2
+            summary_rows = [
+                (ar(f"إجمالي عدد العقود: {len(filtered_customers)} عقد"), ar(f"قيمة السلع الأصلية: {range_goods_val:,.2f} ريال")),
+                (ar(f"الدخل الشهري المتوقع: {range_m_income:,.2f} ريال"), ar(f"الدخل الإجمالي المتوقع: {range_tot_income:,.2f} ريال")),
+                (ar(f"أرباح الفوائد: {range_profit_val:,.2f} ريال"), ar("حالة التقرير: معتمد ومراجع إلكترونياً")),
+            ]
+            for r_ in summary_rows:
+                for i_, txt in enumerate(r_):
+                    pdf.set_fill_color(248, 250, 252)
+                    pdf.set_text_color(15, 23, 42)
+                    pdf.set_font(font, size=9)
+                    pdf.cell(97.95, 8, txt, border=1, fill=True, align='C')
+                pdf.ln(8)
+            pdf.ln(4)
+
+            pdf.set_text_color(15, 23, 42)
+            pdf.set_font(font, size=10)
+            pdf.cell(W, 7, ar("قائمة العقود والعملاء المدرجين ضمن هذه الفترة:"), align='R')
+            pdf.ln(9)
+
+            headers = [ar("المتبقي"), ar("القسط الشهري"), ar("إجمالي العقد"), ar("نوع السلعة"), ar("تاريخ العقد"), ar("اسم العميل")]
+            colw = [30, 30, 35, 40, 30, 30.9]
+            pdf.set_fill_color(30, 41, 59)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(font, size=9)
+            for i_, h in enumerate(headers):
+                pdf.cell(colw[i_], 8, h, border=1, fill=True, align='C')
+            pdf.ln(8)
+
+            row_num = 0
+            for c in filtered_customers:
+                c_name = c.get('name', '')
+                c_date = c.get('start_date', '')
+                c_item = c.get('item_type', '-') or '-'
+                c_monthly = c.get('monthly_installment', 0)
+                c_total_m = c.get('total_months', 12)
+                c_tot_due = c_monthly * c_total_m
+                c_rem = c.get('remaining_amount', 0)
+                if len(c_item) > 22:
+                    c_item = c_item[:20] + '...'
+                if len(c_name) > 22:
+                    c_name = c_name[:20] + '...'
+
+                fill = (255, 255, 255) if row_num % 2 == 0 else (248, 250, 252)
+                pdf.set_fill_color(*fill)
+                pdf.set_text_color(51, 65, 85)
+                pdf.set_font(font, size=9)
+                vals = [
+                    ar(f"{c_rem:,.0f} ر.س"), ar(f"{c_monthly:,.0f} ر.س"), ar(f"{c_tot_due:,.0f} ر.س"),
+                    ar(c_item), ar(c_date), ar(c_name),
+                ]
+                for i_, v in enumerate(vals):
+                    pdf.cell(colw[i_], 7, v, border=1, fill=True, align='C')
+                pdf.ln(7)
+                row_num += 1
+
+            pdf.output(pdf_filename)
+
             try:
-                doc = SimpleDocTemplate(
-                    pdf_filename, 
-                    pagesize=letter, 
-                    rightMargin=20, 
-                    leftMargin=20, 
-                    topMargin=25, 
-                    bottomMargin=25
-                )
-                styles = getSampleStyleSheet()
-                pdf_font = 'ArabicFont' if font_path else 'Helvetica'
-
-                title_style = ParagraphStyle(
-                    'CorpTitle',
-                    parent=styles['Heading1'],
-                    fontName=pdf_font,
-                    fontSize=18,
-                    leading=22,
-                    alignment=1,
-                    textColor=colors.HexColor("#FFFFFF")
-                )
-                subtitle_style = ParagraphStyle(
-                    'CorpSubtitle',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=10,
-                    leading=14,
-                    alignment=1,
-                    textColor=colors.HexColor("#CBD5E1")
-                )
-                header_style = ParagraphStyle(
-                    'CorpHeader',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=10,
-                    leading=14,
-                    alignment=2,
-                    textColor=colors.HexColor("#0F172A")
-                )
-                table_header_style = ParagraphStyle(
-                    'TableHead',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=10,
-                    leading=13,
-                    alignment=1,
-                    textColor=colors.white
-                )
-                cell_style = ParagraphStyle(
-                    'TableCell',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=9,
-                    leading=12,
-                    alignment=1,
-                    textColor=colors.HexColor("#334155")
-                )
-
-                elements = []
-
-                header_banner = [
-                    [Paragraph(ar("تطبيق أقساطي - الإدارة المالية المؤسسية"), subtitle_style)],
-                    [Paragraph(ar("تقرير إيرادات الفترة المالية والأرباح"), title_style)],
-                    [Paragraph(ar(f"فترة التقرير: من {date_from_str} إلى {date_to_str}  |  تاريخ الاصدار: {datetime.now().strftime('%Y-%m-%d %H:%M')}"), subtitle_style)]
-                ]
-                t_banner = Table(header_banner, colWidths=[572])
-                t_banner.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0F172A")),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                    ('TOPPADDING', (0,0), (-1,-1), 12),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 12),
-                ]))
-                elements.append(t_banner)
-                
-                gold_bar = Table([['']], colWidths=[572], rowHeights=[4])
-                gold_bar.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#D97706"))]))
-                elements.append(gold_bar)
-                elements.append(Spacer(1, 14))
-
-                summary_data = [
-                    [Paragraph(ar(f"إجمالي عدد العقود المسجلة للفترة: {len(filtered_customers)} عقد"), header_style), Paragraph(ar(f"إجمالي قيمة السلع الأصلية: {range_goods_val:,.2f} ريال"), header_style)],
-                    [Paragraph(ar(f"الدخل الشهري المتوقع للفترة: {range_m_income:,.2f} ريال"), header_style), Paragraph(ar(f"الدخل الإجمالي المتوقع للفترة: {range_tot_income:,.2f} ريال"), header_style)],
-                    [Paragraph(ar(f"إجمالي أرباح الفوائد المحققة: {range_profit_val:,.2f} ريال"), header_style), Paragraph(ar(f"حالة التقرير: معتمد ومراجع الكترونياً"), header_style)]
-                ]
-                t_summary = Table(summary_data, colWidths=[286, 286])
-                t_summary.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
-                    ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CBD5E1")),
-                    ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-                    ('PADDING', (0,0), (-1,-1), 8),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ]))
-                elements.append(t_summary)
-                elements.append(Spacer(1, 14))
-
-                elements.append(Paragraph(ar("<b>قائمة العقود والعملاء المدرجين ضمن هذه الفترة:</b>"), header_style))
-                elements.append(Spacer(1, 6))
-
-                table_data = [[
-                    Paragraph(ar("المتبقي"), table_header_style),
-                    Paragraph(ar("القسط الشهري"), table_header_style),
-                    Paragraph(ar("إجمالي العقد"), table_header_style),
-                    Paragraph(ar("نوع السلعة / البيان"), table_header_style),
-                    Paragraph(ar("تاريخ العقد"), table_header_style),
-                    Paragraph(ar("اسم العميل"), table_header_style)
-                ]]
-
-                for c in filtered_customers:
-                    c_name = c.get('name', '')
-                    c_date = c.get('start_date', '')
-                    c_item = c.get('item_type', '-')
-                    c_monthly = c.get('monthly_installment', 0)
-                    c_total_m = c.get('total_months', 12)
-                    c_tot_due = c_monthly * c_total_m
-                    c_rem = c.get('remaining_amount', 0)
-
-                    table_data.append([
-                        Paragraph(ar(f"{c_rem:,.0f} ر.س"), cell_style),
-                        Paragraph(ar(f"{c_monthly:,.0f} ر.س"), cell_style),
-                        Paragraph(ar(f"{c_tot_due:,.0f} ر.س"), cell_style),
-                        Paragraph(ar(c_item), cell_style),
-                        Paragraph(ar(c_date), cell_style),
-                        Paragraph(ar(c_name), cell_style)
-                    ])
-
-                t_details = Table(table_data, colWidths=[90, 90, 95, 110, 85, 102])
-                t_details.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                    ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CBD5E1")),
-                    ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ('PADDING', (0,0), (-1,-1), 7),
-                ]))
-                elements.append(t_details)
-
-                doc.build(elements)
-                
                 webbrowser.open(os.path.abspath(pdf_filename))
-                self.show_action_message(f"تم إصدار وتصدير تقرير الإيرادات في مجلد (أقساطي):\n{pdf_filename}")
-                return
-            except Exception as e:
-                self.show_action_message(f"حدث خطأ أثناء تصدير تقرير الـ PDF: {str(e)}")
-        else:
-            self.show_action_message("مكتبة ReportLab غير متوفرة لتوليد الـ PDF")
+            except Exception:
+                pass
+            self.show_action_message(f"تم إصدار وتصدير تقرير الإيرادات في مجلد (أقساطي):\n{pdf_filename}")
+        except Exception as e:
+            self.show_action_message(f"حدث خطأ أثناء تصدير تقرير الـ PDF: {str(e)}")
 
     def open_revenues_popup(self):
         self.calculate_dashboard_financials()
@@ -2016,7 +1958,7 @@ class AqsatiApp(MDApp):
         cust = self.current_customer
         if not cust:
             return
-            
+
         c_name = cust.get('name', 'غير محدد')
         id_num = cust.get('id_number', 'غير مسجل')
         bond = cust.get('bond_num', 'غير محدد')
@@ -2024,158 +1966,117 @@ class AqsatiApp(MDApp):
         start_d = cust.get('start_date', '01-08-2026')
         rem_amount = cust.get('remaining_amount', 0)
         notes = cust.get('notes', 'لا توجد ملاحظات')
-        
         total_contract_value = cust.get('monthly_installment', 0.0) * cust.get('total_months', 0)
+
         dir_path = self.get_aqsati_internal_dir()
         pdf_filename = os.path.join(dir_path, f"تقرير_كشف_حساب_{c_name}.pdf".replace(" ", "_"))
 
-        if REPORTLAB_AVAILABLE:
+        if not FPDF_AVAILABLE:
+            self.show_action_message("مكتبة PDF غير متوفرة على هذا الجهاز")
+            return
+
+        try:
+            pdf = FPDF('P', 'mm', 'Letter')
+            pdf.set_margins(10, 10, 10)
+            pdf.set_auto_page_break(True, 15)
+            pdf.add_page()
+            font = 'Arabic' if font_path else 'helvetica'
+            if font_path:
+                pdf.add_font('Arabic', '', font_path)
+
+            W = 195.9
+            # Header banner
+            pdf.set_fill_color(15, 23, 42)
+            pdf.rect(10, 10, W, 22, 'F')
+            pdf.set_xy(10, 12)
+            pdf.set_text_color(203, 213, 225)
+            pdf.set_font(font, size=9)
+            pdf.multi_cell(W, 5, ar("تطبيق أقساطي - التقرير المالي الرسمي"), align='C')
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(font, size=15)
+            pdf.multi_cell(W, 7, ar("كشف حساب وتفاصيل دفوعات الأقساط الشامل"), align='C')
+            pdf.set_text_color(203, 213, 225)
+            pdf.set_font(font, size=8)
+            pdf.multi_cell(W, 5, ar(f"تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d %H:%M')}"), align='C')
+            # Gold bar
+            pdf.set_fill_color(217, 119, 6)
+            pdf.rect(10, 32, W, 1.2, 'F')
+            pdf.set_y(36)
+
+            # Info grid: 4 rows x (label, value, label, value)
+            info_rows = [
+                (ar("العميل"), ar(c_name), ar("رقم الهوية"), ar(id_num)),
+                (ar("نوع السلعة"), ar(item), ar("رقم السند"), ar(bond)),
+                (ar("بداية العقد"), ar(start_d), ar("المتبقي للسداد"), ar(f"{rem_amount:,.0f} ريال")),
+                (ar("الملاحظات"), ar(notes), ar("إجمالي العقد"), ar(f"{total_contract_value:,.0f} ريال")),
+            ]
+            col_w = [32, 65.95, 32, 65.95]
+            for r_ in info_rows:
+                for i_, txt in enumerate(r_):
+                    if i_ % 2 == 0:
+                        pdf.set_fill_color(248, 250, 252)
+                        pdf.set_text_color(15, 23, 42)
+                        pdf.set_font(font, size=9)
+                    else:
+                        pdf.set_fill_color(255, 255, 255)
+                        pdf.set_text_color(30, 41, 59)
+                        pdf.set_font(font, size=9)
+                    pdf.cell(col_w[i_], 7, txt, border=1, fill=True, align='C')
+                pdf.ln(7)
+            pdf.ln(4)
+
+            pdf.set_text_color(15, 23, 42)
+            pdf.set_font(font, size=10)
+            pdf.cell(W, 7, ar("جدول بيان دفعات الأقساط التفصيلي:"), align='R')
+            pdf.ln(9)
+
+            # Installments table
+            headers = [ar("ملاحظات"), ar("تاريخ السداد"), ar("المبلغ"), ar("حالة القسط"), ar("الشهر")]
+            colw = [50, 45, 35, 35, 30.9]
+            pdf.set_fill_color(30, 41, 59)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font(font, size=9)
+            for i_, h in enumerate(headers):
+                pdf.cell(colw[i_], 8, h, border=1, fill=True, align='C')
+            pdf.ln(8)
+
+            schedule = cust.get('schedule_installments', [])
+            row_num = 0
+            for item_sch in schedule:
+                m_num = item_sch.get('month_num', 1)
+                is_p = item_sch.get('status') == 'paid'
+                amt = item_sch.get('amount', 0)
+                p_date = item_sch.get('paid_date', '-') or '-'
+                note = item_sch.get('note', '') or '-'
+                if len(note) > 30:
+                    note = note[:28] + '...'
+
+                fill = (255, 255, 255) if row_num % 2 == 0 else (248, 250, 252)
+                pdf.set_fill_color(*fill)
+                pdf.set_font(font, size=9)
+
+                vals = [ar(note), ar(p_date), ar(f"{amt:,.0f} ريال")]
+                for i_, v in enumerate(vals):
+                    pdf.set_text_color(51, 65, 85)
+                    pdf.cell(colw[i_], 7, v, border=1, fill=True, align='C')
+
+                pdf.set_text_color(5, 150, 105) if is_p else pdf.set_text_color(220, 38, 38)
+                pdf.cell(colw[3], 7, ar("مسدد") if is_p else ar("غير مسدد"), border=1, fill=True, align='C')
+
+                pdf.set_text_color(51, 65, 85)
+                pdf.cell(colw[4], 7, ar(f"شهر {m_num}"), border=1, fill=True, align='C')
+                pdf.ln(7)
+                row_num += 1
+
+            pdf.output(pdf_filename)
+
             try:
-                doc = SimpleDocTemplate(
-                    pdf_filename, 
-                    pagesize=letter, 
-                    rightMargin=15, 
-                    leftMargin=15, 
-                    topMargin=25, 
-                    bottomMargin=25
-                )
-                styles = getSampleStyleSheet()
-                pdf_font = 'ArabicFont' if font_path else 'Helvetica'
-
-                title_style = ParagraphStyle(
-                    'CompanyTitle',
-                    parent=styles['Heading1'],
-                    fontName=pdf_font,
-                    fontSize=18,
-                    leading=22,
-                    alignment=1,
-                    textColor=colors.HexColor("#FFFFFF")
-                )
-                subtitle_style = ParagraphStyle(
-                    'CompanySubtitle',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=9,
-                    leading=13,
-                    alignment=1,
-                    textColor=colors.HexColor("#CBD5E1")
-                )
-                header_style = ParagraphStyle(
-                    'CorporateHeader',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=10,
-                    leading=14,
-                    alignment=2,
-                    textColor=colors.HexColor("#0F172A")
-                )
-                table_header_style = ParagraphStyle(
-                    'TableHeader',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=10,
-                    leading=13,
-                    alignment=1,
-                    textColor=colors.white
-                )
-                cell_style = ParagraphStyle(
-                    'TableCell',
-                    parent=styles['Normal'],
-                    fontName=pdf_font,
-                    fontSize=9,
-                    leading=12,
-                    alignment=1,
-                    textColor=colors.HexColor("#334155")
-                )
-
-                elements = []
-
-                header_banner = [
-                    [Paragraph(ar("تطبيق أقساطي - التقرير المالي الرسمي"), subtitle_style)],
-                    [Paragraph(ar("كشف حساب وتفاصيل دفوعات الأقساط الشامل"), title_style)],
-                    [Paragraph(ar(f"تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d %H:%M')}"), subtitle_style)]
-                ]
-                t_banner = Table(header_banner, colWidths=[582])
-                t_banner.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0F172A")),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                    ('TOPPADDING', (0,0), (-1,-1), 10),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-                ]))
-                elements.append(t_banner)
-                
-                gold_bar = Table([['']], colWidths=[582], rowHeights=[4])
-                gold_bar.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#D97706"))]))
-                elements.append(gold_bar)
-                elements.append(Spacer(1, 10))
-
-                info_data = [
-                    [Paragraph(ar(f"العميل: {c_name}"), header_style), Paragraph(ar(f"رقم الهوية: {id_num}"), header_style)],
-                    [Paragraph(ar(f"نوع السلعة: {item}"), header_style), Paragraph(ar(f"رقم السند: {bond}"), header_style)],
-                    [Paragraph(ar(f"تاريخ بداية العقد: {start_d}"), header_style), Paragraph(ar(f"المتبقي للسداد: {rem_amount:,.0f} ريال"), header_style)],
-                    [Paragraph(ar(f"الملاحظات: {notes}"), header_style), Paragraph(ar(f"إجمالي قيمة العقد بالفوائد: {total_contract_value:,.0f} ريال"), header_style)]
-                ]
-                
-                t_info = Table(info_data, colWidths=[291, 291])
-                t_info.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
-                    ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CBD5E1")),
-                    ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-                    ('PADDING', (0,0), (-1,-1), 6),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ]))
-                elements.append(t_info)
-                elements.append(Spacer(1, 12))
-
-                elements.append(Paragraph(ar("<b>جدول بيان دفعات الأقساط التفصيلي (موسع كلياً):</b>"), header_style))
-                elements.append(Spacer(1, 6))
-
-                table_data = [[
-                    Paragraph(ar("ملاحظات"), table_header_style),
-                    Paragraph(ar("تاريخ السداد"), table_header_style),
-                    Paragraph(ar("المبلغ"), table_header_style),
-                    Paragraph(ar("حالة القسط"), table_header_style),
-                    Paragraph(ar("الشهر"), table_header_style)
-                ]]
-
-                schedule = cust.get('schedule_installments', [])
-                for item_sch in schedule:
-                    m_num = item_sch.get('month_num', 1)
-                    is_p = item_sch.get('status') == 'paid'
-                    amt = item_sch.get('amount', 0)
-                    p_date = item_sch.get('paid_date', '-')
-                    note = item_sch.get('note', '-')
-
-                    st_str = "<font color='#059669'><b>✓ مسدد</b></font>" if is_p else "<font color='#DC2626'><b>✗ غير مسدد</b></font>"
-
-                    table_data.append([
-                        Paragraph(ar(note if note else "-"), cell_style),
-                        Paragraph(ar(p_date if p_date else "-"), cell_style),
-                        Paragraph(ar(f"{amt:,.0f} ريال"), cell_style),
-                        Paragraph(ar(st_str), cell_style),
-                        Paragraph(ar(f"شهر {m_num}"), cell_style)
-                    ])
-
-                t_schedule = Table(table_data, colWidths=[130, 120, 115, 110, 107])
-                t_schedule.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                    ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CBD5E1")),
-                    ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
-                    ('PADDING', (0,0), (-1,-1), 8),
-                ]))
-                elements.append(t_schedule)
-
-                doc.build(elements)
-                
                 webbrowser.open(os.path.abspath(pdf_filename))
-                self.show_action_message(f"تم تصدير التقرير في مجلد (أقساطي):\n{pdf_filename}")
-                return
-            except Exception as e:
+            except Exception:
                 pass
+            self.show_action_message(f"تم تصدير التقرير في مجلد (أقساطي):\n{pdf_filename}")
+        except Exception as e:
+            self.show_action_message(f"حدث خطأ أثناء تصدير تقرير الـ PDF: {str(e)}")
 
     def backup_to_phone(self):
         target_dir = self.get_aqsati_internal_dir()
