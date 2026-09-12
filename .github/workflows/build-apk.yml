@@ -93,9 +93,24 @@ jobs:
           echo "=== freetype package dir ==="
           ls -la
 
+      - name: Patch downloader User-Agent (fixes HTTP 403 from PyPI)
+        run: |
+          mkdir -p patches
+          cat > patches/sitecustomize.py <<'PYEOF'
+          import urllib.request as _ur
+          _orig_urlretrieve = _ur.urlretrieve
+          def _patched_urlretrieve(url, filename=None, reporthook=None, data=None):
+              if isinstance(url, str) and url.startswith(('http://', 'https://')):
+                  url = _ur.Request(url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'})
+              return _orig_urlretrieve(url, filename, reporthook, data)
+          _ur.urlretrieve = _patched_urlretrieve
+          PYEOF
+          echo "Patch installed:" && cat patches/sitecustomize.py
+
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
+          export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
           buildozer android debug
 
       - name: Verify 16 KB alignment
