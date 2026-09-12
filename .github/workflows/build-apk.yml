@@ -41,13 +41,11 @@ jobs:
         run: |
           pip install --user buildozer cython==0.29.36
 
-      - name: Cache Buildozer toolchain (exact match only)
+      - name: Cache NDK and SDK only (safe toolchain, no build outputs)
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}
+          path: ~/.buildozer
+          key: toolchain-v2-${{ hashFiles('buildozer.spec') }}
 
       - name: Prepare Android SDK cmdline-tools
         run: |
@@ -153,7 +151,7 @@ jobs:
           export PATH=$PATH:~/.local/bin
           export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
           export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-          rm -rf bin
+          rm -rf bin .buildozer/android/platform/build-arm64-v8a/dists
           buildozer android debug 2>&1 | tee build.log
 
       - name: Diagnose on failure
@@ -162,7 +160,7 @@ jobs:
           echo "===== DOWNLOAD LINES BEFORE FAILURE ====="
           grep -n "Downloading" build.log | tail -8 || true
           echo "===== ERROR CONTEXT ====="
-          grep -n -B3 "HTTPError\|Download failed\|403" build.log | head -40 || true
+          grep -n -B3 "HTTPError\|Download failed\|403\|Command failed" build.log | head -40 || true
 
       - name: Verify 16 KB alignment
         if: success()
