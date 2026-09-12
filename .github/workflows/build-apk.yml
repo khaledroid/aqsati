@@ -41,33 +41,6 @@ jobs:
         run: |
           pip install --user buildozer cython==0.29.36
 
-      - name: Clone and patch python-for-android (16KB linker flags)
-        run: |
-          rm -rf p4a
-          git clone --depth 1 https://github.com/kivy/python-for-android p4a
-          cd p4a
-          git fetch --depth 1 origin 58d21141f17c889bf8585f5665921d72028f8831
-          git checkout FETCH_HEAD
-          cd ..
-          python3 << 'EOF'
-          import pathlib
-          p = pathlib.Path('p4a/pythonforandroid/archs.py')
-          s = p.read_text()
-          if 'max-page-size' in s:
-              print('already patched')
-          else:
-              s = s.replace("    common_ldflags = ['-L{ctx_libs_dir}']",
-                            "    common_ldflags = ['-L{ctx_libs_dir}', '-Wl,-z,max-page-size=16384', '-Wl,-z,common-page-size=16384']", 1)
-              s = s.replace("        '-shared',",
-                            "        '-shared',\n        '-Wl,-z,max-page-size=16384',\n        '-Wl,-z,common-page-size=16384',", 1)
-              s = s.replace("        env['LDSHARED'] = env['CC'] + ' ' + ' '.join(self.common_ldshared)",
-                            "        env['LDSHARED'] = env['CC'] + ' ' + ' '.join(self.common_ldshared)\n"
-                            "        env['CMAKE_SHARED_LINKER_FLAGS'] = (env.get('CMAKE_SHARED_LINKER_FLAGS', '') + ' -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384').strip()", 1)
-              p.write_text(s)
-              print('patched archs.py OK')
-          EOF
-          grep -n "max-page-size" p4a/pythonforandroid/archs.py
-
       - name: Cache toolchain and package tarballs
         uses: actions/cache@v4
         with:
@@ -76,6 +49,65 @@ jobs:
             .buildozer/android/platform/build-arm64-v8a/packages
           key: toolchain-v2-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-
+
+      - name: Ensure NDK present and wrap compilers for 16 KB alignment
+        run: |
+          NDK_DIR=$(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null | head -1)
+          if [ -z "$NDK_DIR" ]; then
+            echo "NDK not cached - downloading r25b"
+            mkdir -p $HOME/.buildozer/android/platform
+            wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -O /tmp/ndk.zip
+            unzip -q /tmp/ndk.zip -d $HOME/.buildozer/android/platform/
+            NDK_DIR=$(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null | head -1)
+          fi
+          echo "NDK: $NDK_DIR"
+          NDK_BIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          write_clang_wrapper() {
+            f="$1"
+            [ -e "$f.real" ] && return
+            mv "$f" "$f.real"
+            {
+              echo '#!/bin/bash'
+              echo 'ARGS=("$@")'
+              echo 'LINKING=0'
+              echo 'for a in "${ARGS[@]}"; do'
+              echo '  case "$a" in -shared|-pie) LINKING=1;; esac'
+              echo 'done'
+              echo 'REAL="$(readlink -f "$0").real"'
+              echo 'if [ "$LINKING" = "1" ]; then'
+              echo '  exec "$REAL" "${ARGS[@]}" -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384'
+              echo 'else'
+              echo '  exec "$REAL" "${ARGS[@]}"'
+              echo 'fi'
+            } > "$f"
+            chmod +x "$f"
+          }
+          write_ld_wrapper() {
+            f="$1"
+            [ -e "$f.real" ] && return
+            mv "$f" "$f.real"
+            {
+              echo '#!/bin/bash'
+              echo 'REAL="$(readlink -f "$0").real"'
+              echo 'exec "$REAL" "$@" -z max-page-size=16384 -z common-page-size=16384'
+            } > "$f"
+            chmod +x "$f"
+          }
+          for f in "$NDK_BIN"/*clang "$NDK_BIN"/*clang++; do
+            [ -f "$f" ] || continue
+            case "$f" in *.real) continue;; esac
+            real=$(readlink -f "$f")
+            [ "$real" = "$f" ] || continue
+            write_clang_wrapper "$f"
+          done
+          for f in "$NDK_BIN"/ld.lld "$NDK_BIN"/ld; do
+            [ -f "$f" ] || continue
+            case "$f" in *.real) continue;; esac
+            real=$(readlink -f "$f")
+            [ "$real" = "$f" ] || continue
+            write_ld_wrapper "$f"
+          done
+          echo "wrapped files:"; ls "$NDK_BIN" | grep '\.real' || true
 
       - name: Wipe stale build outputs (force real build, keep tarballs)
         run: |
