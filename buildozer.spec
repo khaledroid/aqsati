@@ -45,8 +45,9 @@ fullscreen = 0
 # (list) Application requirements
 # NOTE: NO pandas, NO reportlab, NO openpyxl here!
 # Your code imports them inside try/except, so the APK works fine without them.
-# NOTE: python3 pinned to 3.11.11 because kivy 2.3.0 does NOT support Python 3.14
-requirements = python3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi
+# NOTE: python3 and hostpython3 pinned to 3.11.11 (must match each other)
+# because kivy 2.3.0 does NOT support Python 3.14
+requirements = python3==3.11.11,hostpython3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi
 
 [buildozer]
 
