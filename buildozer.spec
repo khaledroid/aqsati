@@ -10,7 +10,7 @@ package.name = aqsati
 package.domain = org.aqsati
 
 # (str) Application versioning (method 1)
-version = 1.0
+version = 1.1
 
 # (str) Source code where the main.py live
 source.dir = .
@@ -28,7 +28,6 @@ android.api = 33
 android.minapi = 21
 
 # (str) NDK r28c: required for 16 KB page size support (Samsung S25 / Android 15)
-# The earlier r28c failure was due to disk space, which is now fixed in the workflow.
 android.ndk = 28c
 
 # (list) The Android archs to build for
@@ -47,10 +46,9 @@ orientation = portrait
 fullscreen = 0
 
 # (list) Application requirements
-# NOTE: NO pandas, NO reportlab, NO openpyxl here!
-# Your code imports them inside try/except, so the APK works fine without them.
-# NOTE: python3 and hostpython3 pinned to 3.11.11 (must match each other)
-requirements = python3==3.11.11,hostpython3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi
+# openpyxl + reportlab are pure-python and work fine on Android
+# (pandas was removed - it broke Android builds and was never needed)
+requirements = python3==3.11.11,hostpython3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi,openpyxl,reportlab
 
 [buildozer]
 
