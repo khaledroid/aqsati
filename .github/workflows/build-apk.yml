@@ -97,6 +97,40 @@ jobs:
           export PATH=$PATH:~/.local/bin
           buildozer android debug
 
+      - name: Verify 16 KB alignment
+        run: |
+          python3 << 'EOF'
+          import glob, struct, sys
+          files = glob.glob('.buildozer/android/platform/build-arm64-v8a/dists/**/libs/arm64-v8a/*.so', recursive=True)
+          bad = []
+          for f in files:
+              with open(f, 'rb') as fh:
+                  eh = fh.read(64)
+                  if eh[:4] != b'\x7fELF':
+                      continue
+                  phoff = struct.unpack('<Q', eh[32:40])[0]
+                  phentsize = struct.unpack('<H', eh[54:56])[0]
+                  phnum = struct.unpack('<H', eh[56:58])[0]
+                  fh.seek(phoff)
+                  min_align = None
+                  for _ in range(phnum):
+                      ph = fh.read(phentsize)
+                      if len(ph) < 40:
+                          break
+                      p_type = struct.unpack('<I', ph[:4])[0]
+                      if p_type == 1:
+                          align = struct.unpack('<Q', ph[32:40])[0]
+                          min_align = align if min_align is None else min(min_align, align)
+                  if min_align and min_align < 16384:
+                      bad.append((f, min_align))
+          if bad:
+              print('::error:: Found libs that are NOT 16KB aligned:')
+              for f, a in bad:
+                  print(f'  align={a}: {f}')
+              sys.exit(1)
+          print(f'OK: all {len(files)} native libs are 16KB aligned')
+          EOF
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
