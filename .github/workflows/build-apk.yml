@@ -41,11 +41,20 @@ jobs:
         run: |
           pip install --user buildozer cython==0.29.36
 
-      - name: Cache NDK and SDK only (safe toolchain, no build outputs)
+      - name: Cache toolchain and package tarballs
         uses: actions/cache@v4
         with:
-          path: ~/.buildozer
+          path: |
+            ~/.buildozer
+            .buildozer/android/platform/build-arm64-v8a/packages
           key: toolchain-v2-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-
+
+      - name: Wipe stale build outputs (force real build, keep tarballs)
+        run: |
+          rm -rf .buildozer/android/platform/build-arm64-v8a/dists
+          rm -rf .buildozer/android/platform/build-arm64-v8a/build
+          echo "tarballs kept:"; ls .buildozer/android/platform/build-arm64-v8a/packages 2>/dev/null || echo "(none yet)"
 
       - name: Prepare Android SDK cmdline-tools
         run: |
@@ -149,10 +158,11 @@ jobs:
 
       - name: Build APK
         run: |
+          set -o pipefail
           export PATH=$PATH:~/.local/bin
           export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
           export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-          rm -rf bin .buildozer/android/platform/build-arm64-v8a/dists
+          rm -rf bin
           buildozer android debug 2>&1 | tee build.log
 
       - name: Diagnose on failure
