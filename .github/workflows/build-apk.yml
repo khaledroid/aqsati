@@ -23,11 +23,23 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
+          sudo apt-get install -y git zip unzip wget python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
 
       - name: Install Buildozer and Cython
         run: |
           pip install --user buildozer cython==0.29.36
+
+      - name: Prepare Android SDK cmdline-tools
+        run: |
+          SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $SDK_DIR/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip
+          unzip -q /tmp/cmdtools.zip -d $SDK_DIR/cmdline-tools
+          mv $SDK_DIR/cmdline-tools/cmdline-tools $SDK_DIR/cmdline-tools/latest
+          mkdir -p $SDK_DIR/tools/bin
+          ln -sf $SDK_DIR/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
+          ln -sf $SDK_DIR/cmdline-tools/latest/bin/avdmanager $SDK_DIR/tools/bin/avdmanager || true
+          yes | $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_DIR --licenses > /dev/null 2>&1 || true
 
       - name: Pre-accept Android SDK licenses
         run: |
@@ -35,8 +47,6 @@ jobs:
           echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
-          echo "33b6a2b64607f11b759f320ae9a6c54883e08a56" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
-          echo "601085b94cd77f0b54ff864069570ee9f9da0d6e" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
 
       - name: Build APK
         run: |
