@@ -70,6 +70,7 @@ jobs:
       - name: Pre-seed recipe packages (bypass blocked downloads)
         run: |
           if [ -f recipe-packages.zip ]; then
+            mkdir -p .buildozer/android/platform/build-arm64-v8a
             unzip -o recipe-packages.zip -d .buildozer/android/platform/build-arm64-v8a/
             echo "=== pre-seeded packages ==="
             find .buildozer/android/platform/build-arm64-v8a/packages -type f | sort
