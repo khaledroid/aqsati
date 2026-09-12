@@ -1,104 +1,57 @@
-name: Build Aqsati APK
+[app]
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+# (str) Title of your application
+title = Aqsati
 
-jobs:
-  build:
-    name: Build APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+# (str) Package name
+package.name = aqsati
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+# (str) Package domain (needed for android/ios packaging)
+package.domain = org.aqsati
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android/sdk /usr/share/dotnet /usr/local/share/boost /opt/ghc /usr/local/share/powershell /usr/share/swift || true
-          df -h
+# (str) Application versioning (method 1)
+version = 1.0
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+# (str) Source code where the main.py live
+source.dir = .
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git zip unzip wget python3-pip \
-            autoconf automake autoconf-archive m4 \
-            libtool libtool-bin libltdl-dev \
-            pkg-config zlib1g-dev libbz2-dev liblzma-dev \
-            libncurses5-dev libncursesw5-dev \
-            cmake libffi-dev libssl-dev \
-            make gcc patch ninja-build ccache
+# (list) Source files to include
+source.include_exts = py,png,jpg,kv,atlas,ttf,json
 
-      - name: Install Buildozer and Cython
-        run: |
-          pip install --user buildozer cython==0.29.36
+# (list) Permissions
+android.permissions = INTERNET
 
-      - name: Cache Buildozer toolchain
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-
+# (int) Target Android API
+android.api = 33
 
-      - name: Prepare Android SDK cmdline-tools
-        run: |
-          SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $SDK_DIR/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip
-          unzip -q /tmp/cmdtools.zip -d $SDK_DIR/cmdline-tools
-          mv $SDK_DIR/cmdline-tools/cmdline-tools $SDK_DIR/cmdline-tools/latest
-          mkdir -p $SDK_DIR/tools/bin
-          ln -sf $SDK_DIR/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
-          ln -sf $SDK_DIR/cmdline-tools/latest/bin/avdmanager $SDK_DIR/tools/bin/avdmanager || true
-          yes | $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_DIR --licenses > /dev/null 2>&1 || true
+# (int) Minimum API your APK will support
+android.minapi = 21
 
-      - name: Pre-accept Android SDK licenses
-        run: |
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+# (list) The Android archs to build for
+android.archs = arm64-v8a
 
-      - name: Pre-download freetype (savannah server is flaky)
-        run: |
-          PKG_DIR=.buildozer/android/platform/build-arm64-v8a/packages/freetype
-          mkdir -p $PKG_DIR
-          cd $PKG_DIR
-          if [ -f freetype-2.14.1.tar.gz ] && gzip -t freetype-2.14.1.tar.gz 2>/dev/null; then
-            echo "freetype already cached - skipping download"
-          else
-            rm -f freetype-2.14.1.tar.gz .mark-freetype-2.14.1.tar.gz
-            for url in \
-              "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
-              "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
-              "https://sourceforge.net/projects/freetype/files/freetype2/2.14.1/freetype-2.14.1.tar.gz/download" ; do
-              echo "Trying: $url"
-              curl -fSL --connect-timeout 20 --retry 5 --retry-delay 10 -o freetype-2.14.1.tar.gz "$url" && break
-              sleep 10
-            done
-            gzip -t freetype-2.14.1.tar.gz
-          fi
-          touch .mark-freetype-2.14.1.tar.gz
-          echo "=== freetype package dir ==="
-          ls -la
+# (bool) enables Android auto backup feature
+android.allow_backup = True
 
-      - name: Build APK
-        run: |
-          export PATH=$PATH:~/.local/bin
-          buildozer android debug
+# (str) The format used to package the app for release mode
+android.release_artifact = apk
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: aqsati-apk
-          path: bin/*.apk
+# (str) Orientation
+orientation = portrait
+
+# (bool) Indicate if the application should be fullscreen or not
+fullscreen = 0
+
+# (list) Application requirements
+# NOTE: NO pandas, NO reportlab, NO openpyxl here!
+# Your code imports them inside try/except, so the APK works fine without them.
+# NOTE: python3 pinned to 3.11.11 because kivy 2.3.0 does NOT support Python 3.14
+requirements = python3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi
+
+[buildozer]
+
+# (int) Log level (0 = error only, 1 = info, 2 = debug)
+log_level = 2
+
+# (int) Display warning if buildozer is run as root
+warn_on_root = 1
