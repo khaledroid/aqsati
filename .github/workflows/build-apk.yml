@@ -50,18 +50,17 @@ jobs:
           key: toolchain-v2-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-
 
-      - name: Ensure NDK present and wrap compilers for 16 KB alignment
+      - name: Ensure NDK r28c and wrap compilers (16KB + legacy C tolerance)
         run: |
-          NDK_DIR=$(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null | head -1)
-          if [ -z "$NDK_DIR" ]; then
-            echo "NDK not cached - downloading r25b"
+          for d in $(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null); do
+            case "$d" in *r28c*) ;; *) echo "removing old NDK: $d"; rm -rf "$d";; esac
+          done
+          if ! ls $HOME/.buildozer/android/platform/android-ndk-r28c >/dev/null 2>&1; then
+            echo "NDK r28c not cached - downloading"
             mkdir -p $HOME/.buildozer/android/platform
-            wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -O /tmp/ndk.zip
+            wget -q https://dl.google.com/android/repository/android-ndk-r28c-linux.zip -O /tmp/ndk.zip
             unzip -q /tmp/ndk.zip -d $HOME/.buildozer/android/platform/
-            NDK_DIR=$(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null | head -1)
           fi
-          echo "NDK: $NDK_DIR"
-          NDK_BIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
           write_clang_wrapper() {
             f="$1"
             [ -e "$f.real" ] && return
@@ -70,12 +69,18 @@ jobs:
               echo '#!/bin/bash'
               echo 'ARGS=("$@")'
               echo 'LINKING=0'
+              echo 'COMPILE_ONLY=0'
               echo 'for a in "${ARGS[@]}"; do'
-              echo '  case "$a" in -shared|-pie) LINKING=1;; esac'
+              echo '  case "$a" in'
+              echo '    -shared|-pie) LINKING=1;;'
+              echo '    -c) COMPILE_ONLY=1;;'
+              echo '  esac'
               echo 'done'
               echo 'REAL="$(readlink -f "$0").real"'
               echo 'if [ "$LINKING" = "1" ]; then'
               echo '  exec "$REAL" "${ARGS[@]}" -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384'
+              echo 'elif [ "$COMPILE_ONLY" = "1" ]; then'
+              echo '  exec "$REAL" "${ARGS[@]}" -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=return-mismatch -Wno-error=incompatible-function-pointer-types -Wno-error=deprecated-non-prototype'
               echo 'else'
               echo '  exec "$REAL" "${ARGS[@]}"'
               echo 'fi'
@@ -93,21 +98,25 @@ jobs:
             } > "$f"
             chmod +x "$f"
           }
-          for f in "$NDK_BIN"/*clang "$NDK_BIN"/*clang++; do
-            [ -f "$f" ] || continue
-            case "$f" in *.real) continue;; esac
-            real=$(readlink -f "$f")
-            [ "$real" = "$f" ] || continue
-            write_clang_wrapper "$f"
+          for NDK_DIR in $(ls -d $HOME/.buildozer/android/platform/android-ndk-* 2>/dev/null); do
+            echo "wrapping: $NDK_DIR"
+            NDK_BIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+            for f in "$NDK_BIN"/*clang "$NDK_BIN"/*clang++; do
+              [ -f "$f" ] || continue
+              case "$f" in *.real) continue;; esac
+              real=$(readlink -f "$f")
+              [ "$real" = "$f" ] || continue
+              write_clang_wrapper "$f"
+            done
+            for f in "$NDK_BIN"/ld.lld "$NDK_BIN"/ld; do
+              [ -f "$f" ] || continue
+              case "$f" in *.real) continue;; esac
+              real=$(readlink -f "$f")
+              [ "$real" = "$f" ] || continue
+              write_ld_wrapper "$f"
+            done
           done
-          for f in "$NDK_BIN"/ld.lld "$NDK_BIN"/ld; do
-            [ -f "$f" ] || continue
-            case "$f" in *.real) continue;; esac
-            real=$(readlink -f "$f")
-            [ "$real" = "$f" ] || continue
-            write_ld_wrapper "$f"
-          done
-          echo "wrapped files:"; ls "$NDK_BIN" | grep '\.real' || true
+          echo "wrapped:"; ls $HOME/.buildozer/android/platform/android-ndk-*/toolchains/llvm/prebuilt/linux-x86_64/bin/ | grep '\.real' || true
 
       - name: Wipe stale build outputs (force real build, keep tarballs)
         run: |
