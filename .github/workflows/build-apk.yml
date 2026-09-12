@@ -75,9 +75,9 @@ jobs:
           if [ -f recipe-packages.zip ]; then
             unzip -o recipe-packages.zip -d .buildozer/android/platform/build-arm64-v8a/
             echo "=== pre-seeded packages ==="
-            find .buildozer/android/platform/build-arm64-v8a/packages -name "*.zip" | sort
+            find .buildozer/android/platform/build-arm64-v8a/packages -type f | sort
           else
-            echo "recipe-packages.zip not found - downloads will run normally"
+            echo "WARNING: recipe-packages.zip NOT found in repo root"
           fi
 
       - name: Pre-download freetype (savannah server is flaky)
@@ -103,24 +103,41 @@ jobs:
           echo "=== freetype package dir ==="
           ls -la
 
-      - name: Patch downloader User-Agent (fixes HTTP 403 from PyPI)
+      - name: Patch downloader (browser UA + GitHub mirror + fallback)
         run: |
           mkdir -p patches
           cat > patches/sitecustomize.py <<'PYEOF'
           import urllib.request as _ur
           import shutil as _sh
 
+          def _fetch(req, filename):
+              with _ur.urlopen(req, timeout=120) as r, open(filename, 'wb') as f:
+                  _sh.copyfileobj(r, f)
+
           def _patched_urlretrieve(url, filename=None, reporthook=None, data=None):
+              reqs = []
               if isinstance(url, str) and url.startswith(('http://', 'https://')):
-                  req = _ur.Request(url, headers={
-                      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'})
+                  ua = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'}
+                  u2 = url
+                  if 'github.com' in url and '/archive/' in url:
+                      u2 = 'https://gh-proxy.com/' + url
+                      reqs.append(_ur.Request(u2, headers=ua))
+                  reqs.append(_ur.Request(url, headers=ua))
               else:
-                  req = url
+                  reqs.append(url)
               if filename is None:
                   import tempfile
                   filename = tempfile.mktemp()
-              with _ur.urlopen(req, data=data) as r, open(filename, 'wb') as f:
-                  _sh.copyfileobj(r, f)
+              last = None
+              for req in reqs:
+                  try:
+                      _fetch(req, filename)
+                      last = None
+                      break
+                  except Exception as e:
+                      last = e
+              if last is not None:
+                  raise last
               if reporthook:
                   try:
                       reporthook(1, 1, 1)
@@ -130,16 +147,25 @@ jobs:
 
           _ur.urlretrieve = _patched_urlretrieve
           PYEOF
-          echo "Patch installed:" && cat patches/sitecustomize.py
+          echo "Patch installed"
 
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
           export PYTHONPATH=$GITHUB_WORKSPACE/patches:$PYTHONPATH
           export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-          buildozer android debug
+          buildozer android debug 2>&1 | tee build.log
+
+      - name: Diagnose on failure
+        if: failure()
+        run: |
+          echo "===== DOWNLOAD LINES BEFORE FAILURE ====="
+          grep -n "Downloading" build.log | tail -8 || true
+          echo "===== ERROR CONTEXT ====="
+          grep -n -B3 "HTTPError\|Download failed\|403" build.log | head -40 || true
 
       - name: Verify 16 KB alignment
+        if: success()
         run: |
           python3 << 'EOF'
           import glob, struct, sys
@@ -174,6 +200,7 @@ jobs:
           EOF
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: aqsati-apk
