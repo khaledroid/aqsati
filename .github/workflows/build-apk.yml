@@ -53,6 +53,7 @@ jobs:
       - name: Prepare Android SDK cmdline-tools
         run: |
           SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
+          rm -rf $SDK_DIR/cmdline-tools
           mkdir -p $SDK_DIR/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip
           unzip -q /tmp/cmdtools.zip -d $SDK_DIR/cmdline-tools
