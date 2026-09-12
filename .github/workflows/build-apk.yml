@@ -41,6 +41,33 @@ jobs:
         run: |
           pip install --user buildozer cython==0.29.36
 
+      - name: Clone and patch python-for-android (16KB linker flags)
+        run: |
+          rm -rf p4a
+          git clone --depth 1 https://github.com/kivy/python-for-android p4a
+          cd p4a
+          git fetch --depth 1 origin 58d21141f17c889bf8585f5665921d72028f8831
+          git checkout FETCH_HEAD
+          cd ..
+          python3 << 'EOF'
+          import pathlib
+          p = pathlib.Path('p4a/pythonforandroid/archs.py')
+          s = p.read_text()
+          if 'max-page-size' in s:
+              print('already patched')
+          else:
+              s = s.replace("    common_ldflags = ['-L{ctx_libs_dir}']",
+                            "    common_ldflags = ['-L{ctx_libs_dir}', '-Wl,-z,max-page-size=16384', '-Wl,-z,common-page-size=16384']", 1)
+              s = s.replace("        '-shared',",
+                            "        '-shared',\n        '-Wl,-z,max-page-size=16384',\n        '-Wl,-z,common-page-size=16384',", 1)
+              s = s.replace("        env['LDSHARED'] = env['CC'] + ' ' + ' '.join(self.common_ldshared)",
+                            "        env['LDSHARED'] = env['CC'] + ' ' + ' '.join(self.common_ldshared)\n"
+                            "        env['CMAKE_SHARED_LINKER_FLAGS'] = (env.get('CMAKE_SHARED_LINKER_FLAGS', '') + ' -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384').strip()", 1)
+              p.write_text(s)
+              print('patched archs.py OK')
+          EOF
+          grep -n "max-page-size" p4a/pythonforandroid/archs.py
+
       - name: Cache toolchain and package tarballs
         uses: actions/cache@v4
         with:
@@ -172,7 +199,7 @@ jobs:
           echo "===== DOWNLOAD LINES BEFORE FAILURE ====="
           grep -n "Downloading" build.log | tail -8 || true
           echo "===== ERROR CONTEXT ====="
-          grep -n -B3 "HTTPError\|Download failed\|403\|Command failed" build.log | head -40 || true
+          grep -n -B3 "HTTPError\|Download failed\|403\|Command failed\|error:" build.log | head -50 || true
 
       - name: Verify 16 KB alignment
         if: success()
