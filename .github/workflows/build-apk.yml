@@ -48,6 +48,21 @@ jobs:
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
 
+      - name: Pre-download freetype (savannah server is flaky)
+        run: |
+          PKG_DIR=.buildozer/android/platform/build-arm64-v8a/packages/freetype
+          mkdir -p $PKG_DIR
+          cd $PKG_DIR
+          for url in \
+            "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
+            "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz" \
+            "https://sourceforge.net/projects/freetype/files/freetype2/2.14.1/freetype-2.14.1.tar.gz/download" ; do
+            echo "Trying: $url"
+            curl -fSL --connect-timeout 20 --retry 3 -o freetype-2.14.1.tar.gz "$url" && break
+            sleep 5
+          done
+          ls -la freetype-2.14.1.tar.gz
+
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
