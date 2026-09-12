@@ -32,8 +32,6 @@ fullscreen = 0
 
 requirements = python3==3.11.11,hostpython3==3.11.11,kivy==2.3.0,kivymd==1.1.1,pillow,arabic_reshaper,python-bidi,openpyxl,fpdf2
 
-p4a.source_dir = ./p4a
-
 [buildozer]
 
 log_level = 2
