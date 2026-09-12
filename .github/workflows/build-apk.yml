@@ -98,11 +98,26 @@ jobs:
           mkdir -p patches
           cat > patches/sitecustomize.py <<'PYEOF'
           import urllib.request as _ur
-          _orig_urlretrieve = _ur.urlretrieve
+          import shutil as _sh
+
           def _patched_urlretrieve(url, filename=None, reporthook=None, data=None):
               if isinstance(url, str) and url.startswith(('http://', 'https://')):
-                  url = _ur.Request(url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'})
-              return _orig_urlretrieve(url, filename, reporthook, data)
+                  req = _ur.Request(url, headers={
+                      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'})
+              else:
+                  req = url
+              if filename is None:
+                  import tempfile
+                  filename = tempfile.mktemp()
+              with _ur.urlopen(req, data=data) as r, open(filename, 'wb') as f:
+                  _sh.copyfileobj(r, f)
+              if reporthook:
+                  try:
+                      reporthook(1, 1, 1)
+                  except Exception:
+                      pass
+              return filename, None
+
           _ur.urlretrieve = _patched_urlretrieve
           PYEOF
           echo "Patch installed:" && cat patches/sitecustomize.py
